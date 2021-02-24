@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Video Chat</title>
+    <style>
+        body {
+            display: flex;
+            height: 100vh;
+            margin: 0;
+            align-items: center;
+            justify-content: center;
+            padding: 0 50px;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        video {
+            max-width: calc(50% - 100px);
+            margin: 0 50px;
+            box-sizing: border-box;
+            border-radius: 2px;
+            padding: 0;
+            box-shadow: rgba(156, 172, 172, 0.2) 0px 2px 2px, rgba(156, 172, 172, 0.2) 0px 4px 4px, rgba(156, 172, 172, 0.2) 0px 8px 8px, rgba(156, 172, 172, 0.2) 0px 16px 16px, rgba(156, 172, 172, 0.2) 0px 32px 32px, rgba(156, 172, 172, 0.2) 0px 64px 64px;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js" type="text/javascript"></script>
+    <script type='text/javascript' src='https://cdn.scaledrone.com/scaledrone.min.js'></script>
+
+
+</head>
+<body>
+<button id="join">Join</button>
+<button id="createOffer">Create Offer</button>
+<video id="localVideo" autoplay muted></video>
+<video id="remoteVideo" autoplay></video>
+</body>
+<script>
+
+    $(document).ready(function(){
+        const ws = new SockJS("/videoChat");
+        ws.onopen = function (){
+            alert("Socket is opened");
+        }
+        const configuration = {
+            "iceServers": [{ "url": "stun:stun2.1.google.com:19302" }]
+        };
+        const constraints = {
+            video: true,audio : true
+        };
+        var stream;
+
+        var peerConnection ;
+
+        ws.onmessage = function (message){
+            var data = JSON.parse(message.data);
+            console.log(data);
+            if(data.type==='offer'){
+                handleOffer(data);
+            }
+            else if(data.type==='answer'){
+                handleAnswer(data);
+            }
+            else if(data.type==='candidate'){
+                alert("CANDIDATE");
+                handleCandidate(data);
+            }
+        }
+
+        $("#join").click(function (){
+            peerConnection = new RTCPeerConnection(configuration);
+            navigator.mediaDevices.getUserMedia(constraints).
+            then(function(myStream) {
+                stream = myStream;
+                localVideo.srcObject = stream;
+
+                //using Google public stun server
+                var configuration = {
+                    "iceServers": [{ "url": "stun:stun2.1.google.com:19302" }]
+                };
+
+                peerConnection = new RTCPeerConnection(configuration);
+
+                // setup stream listening
+                peerConnection.addStream(stream);
+
+                //when a remote user adds stream to the peer connection, we display it
+                peerConnection.onaddstream = function (e) {
+                    alert("STREAM");
+                    remoteVideo.srcObject = e.stream;
+                };
+
+                // Setup ice handling
+                peerConnection.onicecandidate = function (event) {
+
+                    if (event.candidate) {
+                        send({
+                            type: "candidate",
+                            candidate: event.candidate
+                        });
+                    }
+
+                };
+            })
+        })
+
+        $("#createOffer").click(function (){
+            peerConnection.createOffer(function (offer) {
+                send({
+                    type: "offer",
+                    offer: offer
+                });
+
+                peerConnection.setLocalDescription(offer);
+
+            }, function (error) {
+                alert("Error when creating an offer");
+            });
+        })
+
+        function send(message){
+            ws.send(JSON.stringify(message));
+        }
+
+        function handleAnswer(data) {
+            peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+        };
+
+        function handleCandidate(data) {
+            peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+        };
+
+        function handleOffer(data){
+            peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+
+            //create an answer to an offer
+            peerConnection.createAnswer(function (answer) {
+                peerConnection.setLocalDescription(answer);
+
+                send({
+                    type: "answer",
+                    answer: answer
+                });
+
+            }, function (error) {
+                alert("Error when creating an answer");
+            });
+        }
+
+    })
+
+
+/*
+
+
+        const constraints = {
+            video: true,audio : true
+        };
+
+
+
+        //////////////////////////////////////////////////////////////////
+        let ws = new WebSocket("ws://localhost:8080/videoChat");
+        var configuration = {
+            "iceServers": [{ "url": "stun:stun2.1.google.com:19302" }]
+        };
+        var peerConnection;
+        peerConnection = new RTCPeerConnection(configuration);
+        peerConnection.onicecandidate = event => {
+            alert("CANDI");
+            if (event.candidate) {
+                send({
+                    event : "candidate",
+                    data : event.candidate
+                });
+            }
+        };
+
+
+        ws.onopen = () => {
+            function send(message) {
+                ws.send(JSON.stringify(message));
+            }
+
+            const configuration = {
+                iceServers: [{
+                    urls: 'stun:stun.l.google.com:19302' // Google's public STUN server
+                }]
+            };
+
+
+            peerConnection = new RTCPeerConnection(configuration);
+
+            peerConnection.onicecandidate = event => {
+                alert("CANDI");
+                if (event.candidate) {
+                    send({
+                        event : "candidate",
+                        data : event.candidate
+                    });
+                }
+            };
+
+            peerConnection.onicecandidateerror = event =>{
+                alert(event.errorCode);
+            }
+
+
+            peerConnection.createOffer(function(offer) {
+                peerConnection.setLocalDescription(offer);
+                send({
+                    event : "offer",
+                    data : offer
+                });
+            }, function(error) {
+                // Handle error here
+            });
+
+
+
+            ws.onmessage = function (data){
+                var obj = JSON.parse(data.data);
+                if(obj.event === 'candidate')
+                {
+                    peerConnection.addIceCandidate(new RTCIceCandidate(obj.data));
+                    alert("CANDIDATE");
+                }
+                else if(obj.event === 'offer')
+                {
+                    alert("offer");
+                    peerConnection.setRemoteDescription(new RTCSessionDescription(obj.data));
+                    peerConnection.createAnswer(function(answer) {
+                        peerConnection.setLocalDescription(answer);
+                        send({
+                            event : "answer",
+                            data : answer
+                        });
+                    }, function(error) {
+                        // Handle error here
+                    });
+                }
+                else if(obj.event === 'answer')
+                {
+                    alert("answer");
+                    peerConnection.setRemoteDescription(new RTCSessionDescription(obj.data));
+                }
+            }
+
+            navigator.mediaDevices.getUserMedia(constraints).
+            then(function(stream) {
+                myVideo.srcObject = stream;
+                stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+            })
+                .catch(function(err) {  });
+
+
+
+            peerConnection.ontrack = event => {
+                alert("STREAM");
+                const stream = event.streams[0];
+                if (!remoteVideo.srcObject || remoteVideo.srcObject.id !== stream.id) {
+                    remoteVideo.srcObject = stream;
+                }
+            };
+*/
+
+</script>
+</html>
