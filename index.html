@@ -37,7 +37,7 @@
 <script>
 
     $(document).ready(function(){
-        const ws = new SockJS("/videoChat");
+        const ws = new SockJS("149.129.146.30/videoChat");
         ws.onopen = function (){
             alert("Socket is opened");
         }
